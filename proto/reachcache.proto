@@ -1,0 +1,67 @@
+/*
+Copyright 2026 wcxSpringDawn
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// 执行 protoc --go_out=. --go-grpc_out=.     --go_opt=paths=source_relative     --go-grpc_opt=paths=source_relative     proto/reachcache.proto 来生成go代码
+
+syntax = "proto3";
+package proto;
+
+option go_package = "./";
+
+// 通用Request
+message SetRequest {
+  string group = 1;
+  string key = 2;
+  bytes value = 3;
+}
+
+message GetRequest {
+  string group = 1;
+  string key = 2;
+}
+
+message DeleteRequest {
+  string group = 1;
+  string key = 2;
+}
+
+// 通用Response
+message Response {
+  int32 code = 1;   // 0=成功, 1=group不存在, 2=key不存在, 3=其它错误
+  string msg = 2;
+}
+
+message GetResponse {
+  int32 code = 1;
+  string msg = 2;
+  bytes value = 3;
+}
+
+message SetResponse {
+  int32 code = 1;
+  string msg = 2;
+}
+
+message DeleteResponse {
+  int32 code = 1;
+  string msg = 2;
+}
+
+service ReachCache {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
