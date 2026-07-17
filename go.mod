@@ -1,5 +1,6 @@
 module github.com/wcxSpringDawn/ReachCache
 
+// v0.0.1
 go 1.25.0
 
 require (
