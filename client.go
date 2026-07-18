@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	proto "github.com/wcxSpringDawn/ReachCache/proto"
+	proto "github.com/vernmorn/reachcache/proto"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

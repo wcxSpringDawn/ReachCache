@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wcxSpringDawn/ReachCache/singleflight"
+	"github.com/vernmorn/reachcache/singleflight"
 )
 
 // 全局 Group 注册表，通过名称索引。

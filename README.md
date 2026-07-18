@@ -22,23 +22,23 @@
 ### 安装
 
 ```bash
-    go get github.com/wcxSpringDawn/ReachCache
+go get github.com/vernmorn/reachcache
 ```
 
 ### 单机模式
 
 ```go
-    package main
-    import reachcache "github.com/wcxSpringDawn/ReachCache"
-    func main() {
-        group := reachcache.NewGroup("demo", 64<<20,
-            reachcache.GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
-                return []byte("value for " + key), nil
-            }),
-        )
-        val, _ := group.Get(context.Background(), "hello")
-        fmt.Println(val.String())
-    }
+package main
+import reachcache "github.com/vernmorn/reachcache"
+func main() {
+    group := reachcache.NewGroup("demo", 64<<20,
+        reachcache.GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
+            return []byte("value for " + key), nil
+        }),
+    )
+    val, _ := group.Get(context.Background(), "hello")
+    fmt.Println(val.String())
+}
 ```
 
 ### 分布式模式
@@ -583,7 +583,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/wcxSpringDawn/ReachCache"
+    "github.com/vernmorn/reachcache"
 )
 
 func main() {
