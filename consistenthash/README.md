@@ -263,7 +263,7 @@ package main
 
 import (
     "fmt"
-    "github.com/wcxSpringDawn/ReachCache/consistenthash"
+    "github.com/vernmorn/reachcache/consistenthash"
 )
 
 func main() {

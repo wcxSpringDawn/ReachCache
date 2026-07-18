@@ -1,6 +1,6 @@
-module github.com/wcxSpringDawn/ReachCache
+module github.com/vernmorn/reachcache
 
-// ReachCache v0.0.2-dev
+// v0.0.1
 go 1.26
 
 require (
