@@ -1,6 +1,5 @@
 module github.com/vernmorn/reachcache
 
-// v0.0.1
 go 1.26
 
 require (
