@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wcxSpringDawn/ReachCache/store"
+	"github.com/vernmorn/reachcache/store"
 )
 
 // Cache 是对底层 store.Store 的并发安全封装，提供懒加载初始化、ByteView 类型适配和统计信息。

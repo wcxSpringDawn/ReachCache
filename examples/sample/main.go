@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	reachcache "github.com/wcxSpringDawn/ReachCache"
+	reachcache "github.com/vernmorn/reachcache"
 )
 
 func main() {

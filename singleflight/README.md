@@ -225,7 +225,7 @@ import (
     "fmt"
     "sync"
 
-    "github.com/wcxSpringDawn/ReachCache/singleflight"
+    "github.com/vernmorn/reachcache/singleflight"
 )
 
 func main() {

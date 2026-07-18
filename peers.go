@@ -25,8 +25,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wcxSpringDawn/ReachCache/consistenthash"
-	"github.com/wcxSpringDawn/ReachCache/registry"
+	"github.com/vernmorn/reachcache/consistenthash"
+	"github.com/vernmorn/reachcache/registry"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
