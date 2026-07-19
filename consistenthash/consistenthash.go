@@ -1,5 +1,5 @@
 /*
-Copyright 2026 wcxSpringDawn
+Copyright 2026 Wang Chunxiao (vernmorn)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -51,6 +51,7 @@ type Map struct {
 	nodeReplicas  map[string]int    // 真实节点名 → 虚拟节点数量
 	nodeCounts    map[string]*int64 // 真实节点名 → 请求计数（*int64 支持原子操作）
 	totalRequests int64             // 总请求数
+	done          chan struct{}     // 关闭信号，停止负载均衡 goroutine
 }
 
 // New 创建一致性哈希实例并启动后台负载均衡器（每秒检查一次）。
@@ -61,6 +62,7 @@ func New(opts ...Option) *Map {
 		hashMap:      make(map[int]string),
 		nodeReplicas: make(map[string]int),
 		nodeCounts:   make(map[string]*int64),
+		done:         make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -197,13 +199,21 @@ func (m *Map) addNode(node string, replicas int) {
 //   - 总请求数 ≥ 1000（避免小样本噪声导致误调整）
 //   - 存在节点的 |负载 − 平均负载| / 平均负载 > LoadBalanceThreshold
 //
+// 计算负载分布时持有读锁保护 nodeReplicas 和 nodeCounts 的并发安全，
+// 读取完毕后释放读锁再决定是否调用 rebalanceNodes()，防止 RWMutex 锁升级死锁。
+//
 // 由后台 goroutine 每秒调用一次。
 func (m *Map) checkAndRebalance() {
 	if atomic.LoadInt64(&m.totalRequests) < 1000 {
 		return // 样本太少，不进行调整
 	}
 
-	// 计算负载情况
+	m.mu.RLock()
+	if len(m.nodeReplicas) == 0 {
+		m.mu.RUnlock()
+		return
+	}
+
 	avgLoad := float64(m.totalRequests) / float64(len(m.nodeReplicas))
 	var maxDiff float64
 
@@ -215,8 +225,10 @@ func (m *Map) checkAndRebalance() {
 		}
 	}
 
-	// 如果负载不均衡度超过阈值，调整虚拟节点
-	if maxDiff > m.config.LoadBalanceThreshold {
+	needRebalance := maxDiff > m.config.LoadBalanceThreshold
+	m.mu.RUnlock()
+
+	if needRebalance {
 		m.rebalanceNodes()
 	}
 }
@@ -296,13 +308,24 @@ func (m *Map) GetStats() map[string]float64 {
 }
 
 // startBalancer 启动后台负载均衡 goroutine，每秒调用 checkAndRebalance。
+// 监听 done channel，Close() 时退出。
 func (m *Map) startBalancer() {
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			m.checkAndRebalance()
+		for {
+			select {
+			case <-ticker.C:
+				m.checkAndRebalance()
+			case <-m.done:
+				return
+			}
 		}
 	}()
+}
+
+// Close 关闭 Map，停止后台负载均衡 goroutine。关闭后 Map 不可再使用。
+func (m *Map) Close() {
+	close(m.done)
 }

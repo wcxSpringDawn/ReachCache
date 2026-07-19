@@ -1,5 +1,5 @@
 /*
-Copyright 2026 wcxSpringDawn
+Copyright 2026 Wang Chunxiao (vernmorn)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -276,6 +276,8 @@ func (p *ClientPicker) Close() error {
 	p.cancel()
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	p.consHash.Close()
 
 	var errs []error
 	for addr, client := range p.clients {

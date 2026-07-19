@@ -1,5 +1,5 @@
 /*
-Copyright 2026 wcxSpringDawn
+Copyright 2026 Wang Chunxiao (vernmorn)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -130,11 +130,12 @@ func (s *lru2Store) Get(key string) (Value, bool) {
 		if evicted {
 			cbKey, cbValue, needCallback = evictedKey, evictedValue, true
 		}
+		val := n1.v // 保存值副本，释放锁后 n1 指针可能被并发写入覆盖
 		s.locks[idx].Unlock()
 		if needCallback && s.onEvicted != nil {
 			s.onEvicted(cbKey, cbValue)
 		}
-		return n1.v, true
+		return val, true
 	}
 
 	// 一级缓存未找到，检查二级缓存
@@ -153,8 +154,9 @@ func (s *lru2Store) Get(key string) (Value, bool) {
 			return nil, false
 		}
 
+		val := n2.v // 保存值副本，释放锁后 n2 指针可能被并发写入覆盖
 		s.locks[idx].Unlock()
-		return n2.v, true
+		return val, true
 	}
 
 	s.locks[idx].Unlock()

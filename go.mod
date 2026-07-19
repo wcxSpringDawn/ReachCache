@@ -1,6 +1,5 @@
 module github.com/vernmorn/reachcache
 
-// v0.0.1
 go 1.26
 
 require (
@@ -13,7 +12,6 @@ require (
 require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.7.0 // indirect

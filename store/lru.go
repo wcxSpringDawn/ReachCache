@@ -1,5 +1,5 @@
 /*
-Copyright 2026 wcxSpringDawn
+Copyright 2026 Wang Chunxiao (vernmorn)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ limitations under the License.
 // 场景——冷数据的批量访问会污染缓存，将热数据挤出（此时应使用 LRU-2）。
 //
 // 过期策略采用"惰性删除 + 定期清理"双机制：
-//   - 惰性删除：Get 发现已过期时异步删除，不阻塞当前请求
+//   - 惰性删除：Get 发现已过期时同步删除
 //   - 定期清理：后台 goroutine 每分钟扫描 expiries 清理过期项与超容量条目
 
 package store
@@ -86,7 +86,7 @@ func newLRUCache(opts Options) *lruCache {
 //  1. 读锁阶段：O(1) 查找 items 映射并检查 expires 是否过期
 //  2. 写锁阶段：将节点移至链表尾部表示最近访问
 //
-// 过期项不立即同步删除，而是通过异步 goroutine 调用 Delete 避免阻塞当前请求。
+// 过期项立即同步删除
 // 二段锁之间元素可能被其他协程删除，因此写锁阶段二次检查 items[key] 是否存在。
 func (c *lruCache) Get(key string) (Value, bool) {
 	c.mu.RLock()
@@ -100,8 +100,8 @@ func (c *lruCache) Get(key string) (Value, bool) {
 	if expTime, hasExp := c.expires[key]; hasExp && time.Now().After(expTime) {
 		c.mu.RUnlock()
 
-		// 异步删除过期项，避免在读锁内操作
-		go c.Delete(key)
+		// 删除过期项
+		c.Delete(key)
 
 		return nil, false
 	}

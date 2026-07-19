@@ -136,6 +136,12 @@ func (m *Map) checkAndRebalance() {
         return // 样本太少，避免噪声
     }
 
+    m.mu.RLock()
+    if len(m.nodeReplicas) == 0 { // 空环防护
+        m.mu.RUnlock()
+        return
+    }
+
     avgLoad := float64(m.totalRequests) / float64(len(m.nodeReplicas))
     var maxDiff float64
     for _, cnt := range m.nodeCounts {
@@ -146,11 +152,16 @@ func (m *Map) checkAndRebalance() {
         }
     }
 
-    if maxDiff > m.config.LoadBalanceThreshold {
-        m.rebalanceNodes()
+    needRebalance := maxDiff > m.config.LoadBalanceThreshold
+    m.mu.RUnlock()
+
+    if needRebalance {
+        m.rebalanceNodes() // 释放读锁后调用，避免锁升级死锁
     }
 }
 ```
+
+> 读取负载分布时持有读锁保护 `nodeReplicas` 和 `nodeCounts` 的并发访问，读取完成后释放读锁再决定是否调用 `rebalanceNodes()`，避免 Go `sync.RWMutex` 锁升级（持有 RLock 时 Lock 会死锁）。
 
 例如 3 节点集群，平均每节点 1000 请求，节点 A 为 1500：不均衡度 = `|1500−1000|/1000 = 50%`，超过默认 25% 阈值，触发调整。
 
@@ -183,6 +194,8 @@ func (m *Map) checkAndRebalance() {
 | 定期检查   | 后台 goroutine 每秒一次       | 1~2 秒内响应负载变化，开销可忽略     |
 
 触发公式：`(总请求 ≥ 1000) AND (存在节点不均衡度 > 25%)`
+
+后台 goroutine 通过 `Map.Close()` 优雅退出，调用方（`ClientPicker` 或独立使用者）应在不再需要时调用 `Close()` 防止 goroutine 泄漏。
 
 ---
 
@@ -268,6 +281,7 @@ import (
 
 func main() {
     m := consistenthash.New()
+    defer m.Close() // 停止后台负载均衡 goroutine
 
     // 添加节点
     m.Add("192.168.1.10:8001", "192.168.1.11:8001", "192.168.1.12:8001")
