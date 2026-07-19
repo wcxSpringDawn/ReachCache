@@ -44,6 +44,11 @@ import (
 //   - 读锁（RLock）：保护 Get / Add / AddWithExpiration / Delete / Len
 //   - 写锁（Lock）：保护 Clear / Close（含 ensureInitialized 中的首次初始化）
 //
+// 关闭保护策略（防止 TOCTOU 竞态）：
+//   - 入口快速检查：atomic.LoadInt32(&c.closed) 无锁快速拒绝
+//   - 持锁后二次校验：获取 mu 锁后再次检查 closed，消除 Close() 在锁空窗期
+//     将 c.store 置 nil 的竞态窗口，保证访问 c.store 时引用有效
+//
 // 生命周期：
 //   - 创建：NewCache(opts) → 仅保存配置，不分配 Store
 //   - 首次写入：Add → ensureInitialized() → 双重检查锁定创建 Store
@@ -93,17 +98,23 @@ func NewCache(opts CacheOptions) *Cache {
 
 // ensureInitialized 使用双重检查锁定（Double-Checked Locking）确保 Store 只初始化一次。
 //
-// 第一次检查：atomic.LoadInt32 无锁快速路径，绝大多数请求在此返回
-// 第二次检查：获取写锁后确认 initialized==0，防止多 goroutine 重复初始化
+// 第一次检查：atomic.LoadInt32 无锁快速路径，也检查 closed 防止在已关闭的 Cache 上初始化
+// 第二次检查：获取写锁后确认 closed==0 且 initialized==0，防止多 goroutine 重复初始化
 func (c *Cache) ensureInitialized() {
-	// 快速检查缓存是否已初始化，避免不必要的锁争用
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return
+	}
+
 	if atomic.LoadInt32(&c.initialized) == 1 {
 		return
 	}
 
-	// 双重检查锁定模式
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return
+	}
 
 	if c.initialized == 0 {
 		// 创建存储选项
@@ -131,8 +142,8 @@ func (c *Cache) ensureInitialized() {
 // 执行路径：
 //  1. 检查 closed：已关闭 → 返回 (ByteView{}, false)
 //  2. 检查 initialized：未初始化 → misses++ → 返回 (ByteView{}, false)
-//  3. 获取读锁 → store.Get(key)
-//  4. 命中 → hits++ → 类型断言为 ByteView → 返回
+//  3. 获取读锁 → 再次检查 closed（防止 TOCTOU 竞态：Close 可能在步骤 2~3 之间释放 store）
+//  4. store.Get(key) → 命中 → hits++ → 类型断言为 ByteView → 返回
 //  5. 未命中或类型断言失败 → misses++ → 返回 (ByteView{}, false)
 //
 // 注意 Get 不会触发懒初始化——未初始化的 Cache 永远返回未命中。
@@ -149,6 +160,10 @@ func (c *Cache) Get(ctx context.Context, key string) (value ByteView, ok bool) {
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return ByteView{}, false
+	}
 
 	// 从底层存储获取
 	val, found := c.store.Get(key)
@@ -184,6 +199,10 @@ func (c *Cache) Add(key string, value ByteView) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return
+	}
+
 	if err := c.store.Set(key, value); err != nil {
 		logrus.Warnf("Failed to add key %s to cache: %v", key, err)
 	}
@@ -209,6 +228,10 @@ func (c *Cache) AddWithExpiration(key string, value ByteView, expirationTime tim
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return
+	}
+
 	// 设置到底层存储
 	if err := c.store.SetWithExpiration(key, value, expiration); err != nil {
 		logrus.Warnf("Failed to add key %s to cache with expiration: %v", key, err)
@@ -224,6 +247,10 @@ func (c *Cache) Delete(key string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return false
+	}
+
 	return c.store.Delete(key)
 }
 
@@ -235,6 +262,10 @@ func (c *Cache) Len() int {
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return 0
+	}
 
 	return c.store.Len()
 }
@@ -248,6 +279,10 @@ func (c *Cache) Clear() {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if atomic.LoadInt32(&c.closed) == 1 {
+		return
+	}
 
 	c.store.Clear()
 

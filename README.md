@@ -233,10 +233,16 @@ func (c *Cache) ensureInitialized() {
 | 变量          | 操作                                | 用途                                      |
 | ------------- | ----------------------------------- | ----------------------------------------- |
 | `initialized` | `LoadInt32` / `StoreInt32`          | 双重检查锁定的无锁快速路径                |
-| `closed`      | `LoadInt32` / `CompareAndSwapInt32` | 快速拒绝关闭后的请求；CAS 保证 Close 幂等 |
+| `closed`      | `LoadInt32` / `CompareAndSwapInt32` | 入口快速拒绝 + 持锁后二次校验；CAS 保证 Close 幂等 |
 
 ```go
 // Get 入口的快速检查（单周期 CPU 指令）
+if atomic.LoadInt32(&c.closed) == 1 {
+    return ByteView{}, false
+}
+
+// 获取锁后二次校验，消除 Close() 在无锁窗口期将 c.store 置 nil 的 TOCTOU 竞态
+c.mu.RLock()
 if atomic.LoadInt32(&c.closed) == 1 {
     return ByteView{}, false
 }
@@ -245,7 +251,6 @@ if atomic.LoadInt32(&c.closed) == 1 {
 if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
     return // 已关闭
 }
-```
 
 #### 4.3 读写锁控制并发访问
 
@@ -255,6 +260,8 @@ if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 | `Clear` / `Close` / `ensureInitialized`                | `Lock`（写锁）  | 修改 store 引用或状态     |
 
 `Clear` 使用写锁确保清空操作期间无并发读写，同时重置 `hits`/`misses`。
+
+所有操作方法在获取锁后均执行 `closed` 二次校验，防止并发 `Close()` 在无锁窗口期将 `c.store` 置 nil 后引发空指针解引用。
 
 #### 4.4 缓存命中/未命中统计
 
@@ -371,7 +378,7 @@ var (
 
 | 函数                                          | 说明                     |
 | --------------------------------------------- | ------------------------ |
-| `NewGroup(name, cacheBytes, getter, opts...)` | 创建并注册，同名覆盖     |
+| `NewGroup(name, cacheBytes, getter, opts...)` | 创建并注册，同名覆盖时自动关闭旧实例释放资源     |
 | `GetGroup(name)`                              | 按名称查找（读锁）       |
 | `ListGroups()`                                | 返回所有名称             |
 | `DestroyGroup(name)`                          | `close()` + 从注册表移除 |

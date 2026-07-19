@@ -156,8 +156,9 @@ func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption)
 	groupsMu.Lock()
 	defer groupsMu.Unlock()
 
-	if _, exists := groups[name]; exists {
+	if old, exists := groups[name]; exists {
 		logrus.Warnf("Group with name %s already exists, will be replaced", name)
+		old.close()
 	}
 
 	groups[name] = g

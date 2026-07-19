@@ -277,6 +277,8 @@ func (p *ClientPicker) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.consHash.Close()
+
 	var errs []error
 	for addr, client := range p.clients {
 		if err := client.Close(); err != nil {
