@@ -37,6 +37,12 @@ func (b ByteView) ByteSlice() []byte {
 	return cloneBytes(b.b)
 }
 
+// Bytes 返回底层字节切片的引用，不执行深拷贝。调用方必须保证不修改返回的切片，
+// 否则将破坏缓存数据的不可变性。仅适用于 protobuf 序列化等只读场景。
+func (b ByteView) Bytes() []byte {
+	return b.b
+}
+
 // String 返回底层数据的字符串表示，仅用于日志和调试。
 func (b ByteView) String() string {
 	return string(b.b)

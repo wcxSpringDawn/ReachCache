@@ -260,7 +260,7 @@ func (s *Server) Get(ctx context.Context, req *proto.GetRequest) (*proto.GetResp
 		return &proto.GetResponse{Code: 2, Msg: err.Error(), Value: []byte{}}, err
 	}
 
-	return &proto.GetResponse{Code: 0, Msg: "Get Success", Value: view.ByteSlice()}, nil
+	return &proto.GetResponse{Code: 0, Msg: "Get Success", Value: view.Bytes()}, nil
 }
 
 // Set 实现服务端Set方法
