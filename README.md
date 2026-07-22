@@ -15,7 +15,6 @@
 - 🔌 可替换路由策略：实现 `PeerPicker` / `Peer` 接口即可接入自定义服务发现
 - 🔒 支持 TLS 加密 + Token 认证（UnaryServerInterceptor 拦截）
 - 📊 多维度运行时统计（命中率、加载耗时、本地/远端/回源分布）
-- 🧩 可嵌入：作为 Go Library 直接集成到业务代码，零外部依赖
 
 ## 快速开始
 
