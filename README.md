@@ -15,7 +15,6 @@
 - 🔌 可替换路由策略：实现 `PeerPicker` / `Peer` 接口即可接入自定义服务发现
 - 🔒 支持 TLS 加密 + Token 认证（UnaryServerInterceptor 拦截）
 - 📊 多维度运行时统计（命中率、加载耗时、本地/远端/回源分布）
-- 🧩 可嵌入：作为 Go Library 直接集成到业务代码，零外部依赖
 
 ## 快速开始
 
@@ -43,7 +42,7 @@ func main() {
 
 ### 分布式模式
 
-> 详见 [examples/sample/](examples/sample/) — 包含多节点部署、一致性哈希路由、跨节点 gRPC 拉取的完整示例。
+> 详见 [examples/](examples/) 。
 
 ### API 概览
 
@@ -88,24 +87,11 @@ Apache License 2.0
 
 ## 设计细节
 
-> **当前状态**：核心模块（Cache / ByteView / Group / store / singleflight / consistenthash）单元测试和注释已完成，peers / server / client 待测试。
-
 ### 1. 架构分层
 
 ReachCache系统采用自顶向下的分层架构，共分为四层，各层职责明确、依赖清晰，体现了关注点分离的设计原则：
 
 ![alt text](docs/img/image.png)
-
-| 模块                       | 包路径                    | 状态             |
-| -------------------------- | ------------------------- | ---------------- |
-| 缓存存储接口 + LRU + LRU-2 | `store/`                  | ✅ 测试 + README |
-| 请求合并                   | `singleflight/`           | ✅ 测试 + README |
-| 一致性哈希                 | `consistenthash/`         | ✅ 测试 + README |
-| 只读数据视图               | `byteview.go`             | ✅               |
-| 并发安全封装               | `cache.go`                | ✅ 测试          |
-| 核心控制器                 | `group.go`                | ✅ 测试          |
-| 节点选择器接口             | `peers.go`                | 待测试           |
-| gRPC 服务端/客户端         | `server.go` / `client.go` | 待测试           |
 
 ---
 
@@ -230,9 +216,9 @@ func (c *Cache) ensureInitialized() {
 
 两个 `int32` 原子变量管理生命周期：
 
-| 变量          | 操作                                | 用途                                      |
-| ------------- | ----------------------------------- | ----------------------------------------- |
-| `initialized` | `LoadInt32` / `StoreInt32`          | 双重检查锁定的无锁快速路径                |
+| 变量          | 操作                                | 用途                                               |
+| ------------- | ----------------------------------- | -------------------------------------------------- |
+| `initialized` | `LoadInt32` / `StoreInt32`          | 双重检查锁定的无锁快速路径                         |
 | `closed`      | `LoadInt32` / `CompareAndSwapInt32` | 入口快速拒绝 + 持锁后二次校验；CAS 保证 Close 幂等 |
 
 ```go
@@ -251,6 +237,7 @@ if atomic.LoadInt32(&c.closed) == 1 {
 if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
     return // 已关闭
 }
+```
 
 #### 4.3 读写锁控制并发访问
 
@@ -376,13 +363,13 @@ var (
 
 生命周期 API：
 
-| 函数                                          | 说明                     |
-| --------------------------------------------- | ------------------------ |
-| `NewGroup(name, cacheBytes, getter, opts...)` | 创建并注册，同名覆盖时自动关闭旧实例释放资源     |
-| `GetGroup(name)`                              | 按名称查找（读锁）       |
-| `ListGroups()`                                | 返回所有名称             |
-| `DestroyGroup(name)`                          | `close()` + 从注册表移除 |
-| `DestroyAllGroups()`                          | 销毁全部                 |
+| 函数                                          | 说明                                         |
+| --------------------------------------------- | -------------------------------------------- |
+| `NewGroup(name, cacheBytes, getter, opts...)` | 创建并注册，同名覆盖时自动关闭旧实例释放资源 |
+| `GetGroup(name)`                              | 按名称查找（读锁）                           |
+| `ListGroups()`                                | 返回所有名称                                 |
+| `DestroyGroup(name)`                          | `close()` + 从注册表移除                     |
+| `DestroyAllGroups()`                          | 销毁全部                                     |
 
 `close()` 为未导出方法，内部自动 Clear + Close store，但不自行从注册表删除（防止 `DestroyGroup` 调用时的锁重入死锁）。
 
@@ -556,7 +543,7 @@ type Group struct {
 | 并发   | `TestCache_ConcurrentGet`       | 50 goroutine 并发读                    |
 |        | `TestCache_ConcurrentAddGet`    | 50 goroutine 读写混合                  |
 
-#### Group 测试（18 个，单机模式）
+#### Group 测试（28 个）
 
 | 分类     | 测试                           | 覆盖点                                  |
 | -------- | ------------------------------ | --------------------------------------- |
@@ -577,6 +564,47 @@ type Group struct {
 |          | `TestGroup_NewGroup_Duplicate` | 同名覆盖，旧实例被替换                  |
 |          | `TestGroup_ListGroups`         | 返回正确数量                            |
 |          | `TestGroup_Close`              | DestroyGroup → closed=1 → Get 报错      |
+
+#### Group 分布式路由测试（10 个）
+
+| 分类        | 测试                                        | 覆盖点                                     |
+| ----------- | ------------------------------------------- | ------------------------------------------ |
+| 远端命中    | `TestGroup_Get_RemoteHit`                   | PickPeer → peer.Get 返回数据，peerHits++   |
+|             | `TestGroup_Get_RemoteMiss_FallbackToGetter` | peer 失败 → 降级 Getter，peerMisses++      |
+|             | `TestGroup_Get_KeyBelongsToSelf`            | self=true → 跳过 peer 直接 Getter          |
+|             | `TestGroup_Get_PeerPickerNil`               | peers=nil（单机模式）→ 不调 PickPeer       |
+|             | `TestGroup_Get_RemoteHit_BackfillCache`     | 远端数据回填本地缓存，二次 Get 本地命中    |
+| Set 同步    | `TestGroup_Set_SyncToPeer`                  | Set 触发异步 syncToPeers → peer.Set 被调用 |
+|             | `TestGroup_Set_FromPeer_NoSync`             | ctx 含 from_peer → 不触发 sync             |
+|             | `TestGroup_Set_SyncToPeer_IsSelf`           | 归属本节点 → 不向自己同步                  |
+| Delete 同步 | `TestGroup_Delete_SyncToPeer`               | Delete 触发异步 syncToPeers → peer.Delete  |
+|             | `TestGroup_Delete_FromPeer_NoSync`          | ctx 含 from_peer → 不触发 sync             |
+
+#### gRPC Server/Client 测试（10 个）
+
+| 分类       | 测试                                 | 覆盖点                                |
+| ---------- | ------------------------------------ | ------------------------------------- |
+| 基本 RPC   | `TestServerClient_Get`               | Client.Get → Server 返回数据          |
+|            | `TestServerClient_Set`               | Client.Set → 数据落入 Server 本地缓存 |
+|            | `TestServerClient_Delete`            | Client.Delete → Server key 被删除     |
+| 错误码     | `TestServerClient_Get_GroupNotFound` | 不存在的 Group → 返回错误             |
+|            | `TestServerClient_Get_GetterFailure` | Getter 失败 → 返回错误                |
+| Token 认证 | `TestServerClient_TokenAuth_Valid`   | 正确 Token → 请求通过                 |
+|            | `TestServerClient_TokenAuth_Invalid` | 错误 Token → PermissionDenied         |
+|            | `TestServerClient_TokenAuth_Missing` | 无 Token → PermissionDenied           |
+| 健康检查   | `TestServer_HealthCheck`             | gRPC 健康检查服务可达                 |
+| from_peer  | `TestServer_Set_FromPeerInjected`    | Server 在 Set 入参注入 from_peer 标记 |
+
+#### ClientPicker 测试（6 个）
+
+| 分类       | 测试                                    | 覆盖点                           |
+| ---------- | --------------------------------------- | -------------------------------- |
+| PickPeer   | `TestPickPeer_Remote`                   | 一致性哈希选中远端节点           |
+|            | `TestPickPeer_Self`                     | 选中本节点 → self=true           |
+|            | `TestPickPeer_EmptyRing`                | 无节点 → ok=false                |
+|            | `TestPickPeer_NoMatchingClient`         | consHash 有节点但 clients 无对应 |
+| Watch 事件 | `TestHandleWatchEvents_Delete`          | DELETE 事件 → 节点被移除         |
+|            | `TestHandleWatchEvents_Delete_SkipSelf` | Self 节点的 DELETE 事件被跳过    |
 
 ---
 
@@ -622,13 +650,3 @@ func main() {
     fmt.Printf("命中率: %.1f%%\n", stats["hit_rate"].(float64)*100)
 }
 ```
-
----
-
-### 10. 待完成
-
-| 模块                      | 工作                  |
-| ------------------------- | --------------------- |
-| `peers.go`                | 单元测试              |
-| `server.go` / `client.go` | 单元测试              |
-| 整体                      | 性能测试（benchmark） |

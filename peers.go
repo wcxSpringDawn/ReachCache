@@ -195,10 +195,8 @@ func (p *ClientPicker) handleWatchEvents(events []*clientv3.Event) {
 			if addr == "" || addr == p.selfAddr {
 				continue
 			}
-			if _, exists := p.clients[addr]; !exists {
-				p.set(addr)
-				logrus.Infof("New service discovered at %s", addr)
-			}
+			p.set(addr)
+			logrus.Infof("New service discovered at %s", addr)
 		case clientv3.EventTypeDelete:
 			addr := parseAddrFromKey(string(event.Kv.Key), p.svcName)
 			if addr == "" || addr == p.selfAddr {
@@ -236,15 +234,24 @@ func (p *ClientPicker) fetchAllServices() error {
 	return nil
 }
 
-// set 添加服务实例
+// set 添加服务实例。若该地址已有客户端，先关闭旧连接再创建新的。
+// 滚动重启或 etcd 租约残留时，确保始终连接到最新实例。
 func (p *ClientPicker) set(addr string) {
-	if client, err := NewClient(addr, p.svcName, p.etcdCli, p.clientOpts...); err == nil {
-		p.consHash.Add(addr)
-		p.clients[addr] = client
-		logrus.Infof("Successfully created client for %s", addr)
-	} else {
-		logrus.Errorf("Failed to create client for %s: %v", addr, err)
+	if old, exists := p.clients[addr]; exists {
+		old.Close()
+		p.consHash.Remove(addr)
+		delete(p.clients, addr)
+		logrus.Infof("Closing stale client for %s", addr)
 	}
+
+	client, err := NewClient(addr, p.svcName, p.etcdCli, p.clientOpts...)
+	if err != nil {
+		logrus.Errorf("Failed to create client for %s: %v", addr, err)
+		return
+	}
+	p.consHash.Add(addr)
+	p.clients[addr] = client
+	logrus.Infof("Successfully created client for %s", addr)
 }
 
 // remove 移除服务实例
