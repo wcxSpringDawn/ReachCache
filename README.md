@@ -495,16 +495,17 @@ type Group struct {
 - Lease 租约 TTL=10 秒，节点故障后 etcd 自动删除注册信息
 - 后台 goroutine 持续 KeepAlive 续约
 - 优雅退出时主动 `Revoke` 立即注销
+- etcd key 路径格式：`/services/{svcName}/{advertiseAddr}`，value 为节点地址
 
 > **TTL 健康检查的局限性**：etcd 的 Lease 机制只能感知网络连通性，无法区分"进程繁忙但存活"与"进程已崩溃"。如果节点进程发生死锁或 goroutine 泄漏，gRPC 服务可能已无法正常处理请求，但 KeepAlive 续约仍在正常进行。为此，ReachCache 在 gRPC 服务端注册了标准的 `grpc_health_v1` 健康检查服务，外部负载均衡器可据此进行更精细的应用层探测。
 
 **服务发现**（`ClientPicker`）：
 
 - 启动时双阶段协同：`fetchAllServices`（全量拉取）+ `watchServiceChanges`（Watch 增量监听）
-- Watch 基于 etcd MVCC 机制，从断连处断点续传，保证事件不丢失
-- `handleWatchEvents`：PUT 事件 → 创建 Client + 加入哈希环；DELETE 事件 → 关闭连接 + 移除
+- `handleWatchEvents`：PUT 事件 → 从 `event.Kv.Value` 解析节点地址 → 若已有旧连接则先关闭再替换（应对滚动重启与租约残留）→ 创建新 Client + 加入哈希环；DELETE 事件 → 从 `event.Kv.Key` 解析地址 → 检查节点是否在 `clients` 中存在 → 关闭连接 + 移除
+- Watch 依赖 etcd v3 客户端库内部的重连机制处理短暂网络波动；若 Watch 遇到永久错误或频道关闭，当前 goroutine 直接退出，不再继续监听（需进程重启或上层重建 `ClientPicker` 恢复服务发现）
 
-> **Watch 事件的可靠性**：etcd Watch 保证事件不丢失但不保证不重复——`handleWatchEvents` 中的去重检查（PUT 检查节点是否已存在、DELETE 检查节点是否存在）正是为了应对事件重复。对于事件丢失的风险，Watch 基于 etcd MVCC 机制从断连点的 revision 开始断点续传，只要重连成功就不会丢失事件。
+> **Watch 事件的可靠性**：etcd Watch 不保证事件不重复——`handleWatchEvents` 中 DELETE 事件检查 `addr` 是否仍在 `clients` 映射中存在，避免对已移除节点重复操作。PUT 事件不做跳过式去重，`set()` 先关闭旧连接再创建新连接，滚动重启和重复事件场景下也能保持连接最新。代码层面未实现显式的断点续传（`WithRev`），Watch 故障后的恢复依赖 etcd 客户端库的自动重连能力。
 
 **节点上下线影响**：新增节点从其他节点各分摊约 `1/N` 的 key，新节点上线时在哈希环上创建 50 个虚拟节点接管相邻区间；下线时其虚拟节点被移除，对应区间由顺时针下一个节点接管，残留在下线节点本地缓存中的数据由 TTL 自然过期淘汰。
 
@@ -523,7 +524,7 @@ type Group struct {
 
 ### 8. 单元测试覆盖
 
-#### Cache 测试（15 个）
+#### Cache 测试
 
 | 分类   | 测试                            | 覆盖点                                 |
 | ------ | ------------------------------- | -------------------------------------- |
@@ -543,7 +544,7 @@ type Group struct {
 | 并发   | `TestCache_ConcurrentGet`       | 50 goroutine 并发读                    |
 |        | `TestCache_ConcurrentAddGet`    | 50 goroutine 读写混合                  |
 
-#### Group 测试（28 个）
+#### Group 测试
 
 | 分类     | 测试                           | 覆盖点                                  |
 | -------- | ------------------------------ | --------------------------------------- |
@@ -565,7 +566,7 @@ type Group struct {
 |          | `TestGroup_ListGroups`         | 返回正确数量                            |
 |          | `TestGroup_Close`              | DestroyGroup → closed=1 → Get 报错      |
 
-#### Group 分布式路由测试（10 个）
+#### Group 分布式路由测试
 
 | 分类        | 测试                                        | 覆盖点                                     |
 | ----------- | ------------------------------------------- | ------------------------------------------ |
@@ -580,7 +581,7 @@ type Group struct {
 | Delete 同步 | `TestGroup_Delete_SyncToPeer`               | Delete 触发异步 syncToPeers → peer.Delete  |
 |             | `TestGroup_Delete_FromPeer_NoSync`          | ctx 含 from_peer → 不触发 sync             |
 
-#### gRPC Server/Client 测试（10 个）
+#### gRPC Server/Client 测试
 
 | 分类       | 测试                                 | 覆盖点                                |
 | ---------- | ------------------------------------ | ------------------------------------- |
@@ -595,7 +596,7 @@ type Group struct {
 | 健康检查   | `TestServer_HealthCheck`             | gRPC 健康检查服务可达                 |
 | from_peer  | `TestServer_Set_FromPeerInjected`    | Server 在 Set 入参注入 from_peer 标记 |
 
-#### ClientPicker 测试（6 个）
+#### ClientPicker 测试
 
 | 分类       | 测试                                    | 覆盖点                           |
 | ---------- | --------------------------------------- | -------------------------------- |
@@ -605,6 +606,12 @@ type Group struct {
 |            | `TestPickPeer_NoMatchingClient`         | consHash 有节点但 clients 无对应 |
 | Watch 事件 | `TestHandleWatchEvents_Delete`          | DELETE 事件 → 节点被移除         |
 |            | `TestHandleWatchEvents_Delete_SkipSelf` | Self 节点的 DELETE 事件被跳过    |
+
+#### 其它测试
+
+- [store](store/README.md)
+- [singleflight](singleflight/README.md)
+- [consistenthash](consistenthash/README.md)
 
 ---
 
