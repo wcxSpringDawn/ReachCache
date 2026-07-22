@@ -78,8 +78,8 @@ func main() {
 	}()
 
 	// ── 5. 等待注册 & 发现其他节点 ──
-	log.Printf("等待节点发现（10s）...")
-	time.Sleep(10 * time.Second)
+	log.Printf("等待节点发现（1s）...")
+	time.Sleep(15 * time.Second)
 	picker.PrintPeers()
 
 	// ═══════════════════════════════════════════
@@ -98,7 +98,7 @@ func main() {
 	}
 
 	// 等待其他节点也完成 Set 和同步（避免时序竞争）
-	time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// 阶段2: 首轮查询 — 本地命中 / 远端拉取 / 回源加载
 	log.Printf("━━━ 阶段2: 首轮查询（触发远端拉取 & 回填）━━━")

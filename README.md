@@ -43,7 +43,7 @@ func main() {
 
 ### 分布式模式
 
-> 详见 [examples/sample/](examples/sample/) — 包含多节点部署、一致性哈希路由、跨节点 gRPC 拉取的完整示例。
+> 详见 [examples/](examples/) 。
 
 ### API 概览
 
