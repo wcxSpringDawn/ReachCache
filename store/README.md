@@ -25,9 +25,9 @@
     - [5.5 索引化双向链表：底层 cache 实现](#55-索引化双向链表底层-cache-实现)
     - [5.6 后台过期清理与关闭](#56-后台过期清理与关闭)
   - [6. 单元测试覆盖](#6-单元测试覆盖)
-    - [store\_test.go（6 个测试）](#store_testgo6-个测试)
-    - [lru\_test.go（18 个测试）](#lru_testgo18-个测试)
-    - [lru2\_test.go（20 个测试）](#lru2_testgo20-个测试)
+    - [store_test.go](#store_testgo)
+    - [lru_test.go](#lru_testgo)
+    - [lru2_test.go](#lru2_testgo)
   - [7. 使用示例](#7-使用示例)
     - [7.1 创建 LRU 缓存](#71-创建-lru-缓存)
     - [7.2 创建 LRU-2 缓存](#72-创建-lru-2-缓存)
@@ -546,7 +546,7 @@ func (c *cache) del(key string) (*node, int, int64) {
 
 共 **44 个测试用例**，分三个测试文件：
 
-### store_test.go（6 个测试）
+### store_test.go
 
 | 测试                              | 覆盖点                               |
 | --------------------------------- | ------------------------------------ |
@@ -557,7 +557,7 @@ func (c *cache) del(key string) (*node, int, int64) {
 | `TestStoreInterface_Polymorphism` | LRU 和 LRU-2 均正确实现 `Store` 接口 |
 | `TestValueInterface`              | `testValue` 编译期满足 `Value` 接口  |
 
-### lru_test.go（18 个测试）
+### lru_test.go
 
 | 分类     | 测试                           | 覆盖点                        |
 | -------- | ------------------------------ | ----------------------------- |
@@ -580,7 +580,7 @@ func (c *cache) del(key string) (*node, int, int64) {
 | 扩展     | `TestLRU_GetWithExpiration`    | GetWithExpiration 返回 TTL    |
 | 生命周期 | `TestLRU_Close`                | Close 安全返回                |
 
-### lru2_test.go（20 个测试）
+### lru2_test.go
 
 | 分类       | 测试                              | 覆盖点                             |
 | ---------- | --------------------------------- | ---------------------------------- |
